@@ -109,6 +109,7 @@ def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
     for resp in responses:
         sentiment = resp.get('sentiment_score', 0)
         keywords = set(resp.get('keywords', []))
+        input_quality = resp.get('input_quality', 1.0)
         
         # Base score from sentiment
         score = (sentiment + 1) / 2  # Normalize to 0-1
@@ -117,6 +118,11 @@ def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         motivation_match = len(keywords.intersection(motivation_keywords))
         if motivation_match > 0:
             score = min(1.0, score + 0.1 * motivation_match)
+        
+        # Apply quality penalty for low-quality inputs
+        if input_quality < 0.5:
+            # Reduce score significantly for poor responses
+            score = score * input_quality * 0.6
         
         scores.append(score)
     
@@ -170,9 +176,11 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
     for resp in responses:
         keywords = set(k.lower() for k in resp.get('keywords', []))
         text = resp.get('raw_response', '').lower()
+        input_quality = resp.get('input_quality', 1.0)
         
-        # Start with moderate score
-        score = 0.5
+        # Start with moderate score, but reduce base for low-quality inputs
+        base_score = 0.5 if input_quality >= 0.5 else 0.2
+        score = base_score
         
         # Check for consistency indicators
         for kw in consistency_keywords:
@@ -183,6 +191,10 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         for kw in volatility_keywords:
             if kw in text:
                 score -= 0.05
+        
+        # Apply quality penalty
+        if input_quality < 0.5:
+            score = score * input_quality
         
         scores.append(max(0, min(1, score)))
     
@@ -245,8 +257,10 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
     for resp in responses:
         text = resp.get('raw_response', '').lower()
         keywords = resp.get('keywords', [])
+        input_quality = resp.get('input_quality', 1.0)
         
-        score = 0.5
+        # Start with base score adjusted for quality
+        score = 0.5 if input_quality >= 0.5 else 0.15
         
         # Check for growth indicators
         for kw in growth_keywords:
@@ -259,6 +273,10 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
         for kw in fixed_keywords:
             if kw in text:
                 score -= 0.1
+        
+        # Apply quality penalty
+        if input_quality < 0.5:
+            score = score * input_quality
         
         scores.append(max(0, min(1, score)))
     

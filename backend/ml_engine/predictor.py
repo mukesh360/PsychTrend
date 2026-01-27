@@ -44,12 +44,14 @@ class BehaviorPredictor:
         
         all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
         sentiments = [r.get('sentiment_score', 0) for r in responses]
+        qualities = [r.get('input_quality', 1.0) for r in responses]
         keywords = []
         for r in responses:
             keywords.extend(r.get('keywords', []))
         
         keyword_counts = Counter(keywords)
         word_count = len(all_text.split()) or 1
+        avg_quality = sum(qualities) / len(qualities) if qualities else 1.0
         
         # Calculate features
         features = {
@@ -72,7 +74,11 @@ class BehaviorPredictor:
             # Sentiment features
             'avg_sentiment': np.mean(sentiments),
             'sentiment_trend': sentiments[-1] - sentiments[0] if len(sentiments) > 1 else 0,
-            'positive_ratio': len([s for s in sentiments if s > 0.2]) / len(sentiments) if sentiments else 0.5
+            'positive_ratio': len([s for s in sentiments if s > 0.2]) / len(sentiments) if sentiments else 0.5,
+            
+            # Quality features
+            'avg_quality': avg_quality,
+            'low_quality_ratio': len([q for q in qualities if q < 0.3]) / len(qualities) if qualities else 0
         }
         
         return features
@@ -88,6 +94,11 @@ class BehaviorPredictor:
         score += min(0.15, features.get('habit_mentions', 0) * 0.04)
         score += features.get('sentiment_stability', 0.5) * 0.2
         score += min(0.15, features.get('discipline_keywords', 0) * 0.07)
+        
+        # Apply quality penalty
+        avg_quality = features.get('avg_quality', 1.0)
+        if avg_quality < 0.5:
+            score = score * avg_quality * 1.2  # Significant reduction
         
         # Normalize
         probability = min(0.95, max(0.1, score))
@@ -131,6 +142,11 @@ class BehaviorPredictor:
         score += min(0.15, features.get('flexibility_keywords', 0) * 0.07)
         score += (features.get('avg_sentiment', 0) + 1) / 10  # Positive sentiment helps
         
+        # Apply quality penalty
+        avg_quality = features.get('avg_quality', 1.0)
+        if avg_quality < 0.5:
+            score = score * avg_quality * 1.2
+        
         probability = min(0.95, max(0.1, score))
         
         if probability > 0.7:
@@ -169,6 +185,11 @@ class BehaviorPredictor:
         score += min(0.15, features.get('improvement_mentions', 0) * 0.04)
         score += min(0.15, features.get('goal_orientation', 0) * 0.07)
         score += max(0, features.get('sentiment_trend', 0) * 0.15)
+        
+        # Apply quality penalty
+        avg_quality = features.get('avg_quality', 1.0)
+        if avg_quality < 0.5:
+            score = score * avg_quality * 1.2
         
         probability = min(0.95, max(0.1, score))
         
@@ -209,11 +230,21 @@ class BehaviorPredictor:
         avg_sentiment = features.get('avg_sentiment', 0)
         stability = features.get('sentiment_stability', 0.5)
         positive_ratio = features.get('positive_ratio', 0.5)
+        avg_quality = features.get('avg_quality', 1.0)
+        low_quality_ratio = features.get('low_quality_ratio', 0)
+        
+        # Check for low engagement/quality responses
+        if avg_quality < 0.3:
+            indicators.append('Very low engagement in responses')
+            risk_level = 'elevated'
+        elif low_quality_ratio > 0.5:
+            indicators.append('Majority of responses show minimal engagement')
+            risk_level = 'moderate'
         
         # Check for concerning patterns
         if avg_sentiment < -0.3:
             indicators.append('Tendency toward negative self-reflection')
-            risk_level = 'moderate'
+            risk_level = 'moderate' if risk_level == 'low' else risk_level
         
         if stability < 0.3:
             indicators.append('High emotional variability in responses')
@@ -222,7 +253,7 @@ class BehaviorPredictor:
         
         if positive_ratio < 0.3:
             indicators.append('Low frequency of positive experiences mentioned')
-            risk_level = 'moderate'
+            risk_level = 'moderate' if risk_level == 'low' else risk_level
         
         # Check for avoidance patterns
         all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()

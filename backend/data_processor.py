@@ -47,6 +47,79 @@ KEYWORD_PATTERNS = {
     'adaptation': r'\b(adapted|adjusted|changed|flexible|transitioned)\b'
 }
 
+# Low-quality input patterns
+DISMISSIVE_RESPONSES = {
+    'no', 'nope', 'nah', 'nothing', 'none', 'idk', 'dunno', 'na', 'n/a',
+    'ok', 'okay', 'k', 'kk', 'yes', 'yeah', 'yep', 'sure', 'fine', 'good',
+    'maybe', 'whatever', 'meh', 'eh', 'um', 'uh', 'hmm', 'hm'
+}
+
+# Pattern for repeated characters (e.g., "kk", "jjj", "hhhh")
+REPEATED_CHAR_PATTERN = re.compile(r'^(.)\1+$')
+
+# Pattern for random characters (e.g., "jj4", "asdf", "qwer")
+RANDOM_CHAR_PATTERN = re.compile(r'^[a-z0-9]{1,4}$', re.IGNORECASE)
+
+
+def validate_input_quality(text: str) -> float:
+    """
+    Validate the quality of user input.
+    Returns a score from 0.0 (very low quality) to 1.0 (high quality).
+    """
+    if not text:
+        return 0.0
+    
+    cleaned = text.strip().lower()
+    word_count = len(cleaned.split())
+    char_count = len(cleaned)
+    
+    # Single character or very short meaningless input
+    if char_count <= 2:
+        return 0.1
+    
+    # Check for repeated characters (kk, jjj, hhh)
+    if REPEATED_CHAR_PATTERN.match(cleaned):
+        return 0.1
+    
+    # Check for random character sequences (jj4, asdf, qw)
+    if RANDOM_CHAR_PATTERN.match(cleaned) and cleaned not in {'i', 'a', 'ok', 'no'}:
+        return 0.15
+    
+    # Check for dismissive single-word responses
+    if cleaned in DISMISSIVE_RESPONSES:
+        return 0.2
+    
+    # Check for mixed dismissive + random (e.g., "no no", "kk ok")
+    words = cleaned.split()
+    dismissive_count = sum(1 for w in words if w in DISMISSIVE_RESPONSES)
+    if word_count <= 3 and dismissive_count == word_count:
+        return 0.2
+    
+    # Short responses (less than 10 chars, less than 3 words)
+    if char_count < 10 and word_count < 3:
+        return 0.3
+    
+    # Check if response has any meaningful content words
+    meaningful_words = set(cleaned.split()) - DISMISSIVE_RESPONSES - {'the', 'a', 'an', 'is', 'was', 'i', 'my', 'me'}
+    if not meaningful_words and word_count < 5:
+        return 0.25
+    
+    # Moderate length but check for substance
+    if word_count < 5:
+        return 0.5
+    
+    # Decent response
+    if word_count < 10:
+        return 0.7
+    
+    # Good, detailed response
+    return 1.0
+
+
+def is_meaningful_response(text: str) -> bool:
+    """Check if a response is meaningful enough for analysis."""
+    return validate_input_quality(text) >= 0.3
+
 
 def analyze_sentiment(text: str) -> float:
     """
@@ -102,6 +175,16 @@ def analyze_sentiment(text: str) -> float:
         # Clamp to [-1, 1]
         return max(-1.0, min(1.0, normalized_score))
     
+    # No sentiment words found - check input quality
+    # Low-quality inputs should return negative scores instead of neutral
+    quality = validate_input_quality(text)
+    if quality < 0.3:
+        # Very low quality: return negative score proportional to how bad the quality is
+        return -0.4 * (1 - quality / 0.3)  # Returns -0.4 to -0.13
+    elif quality < 0.5:
+        # Mediocre quality: slight negative
+        return -0.1
+    
     return 0.0
 
 
@@ -155,8 +238,10 @@ def structure_response(
     - sentiment_category
     - keywords
     - raw_response
+    - input_quality (0.0 to 1.0)
     """
     sentiment_score = analyze_sentiment(raw_response)
+    input_quality = validate_input_quality(raw_response)
     
     structured = {
         'session_id': session_id,
@@ -166,7 +251,8 @@ def structure_response(
         'sentiment_score': round(sentiment_score, 3),
         'sentiment_category': get_sentiment_category(sentiment_score),
         'keywords': extract_keywords(raw_response),
-        'raw_response': raw_response
+        'raw_response': raw_response,
+        'input_quality': round(input_quality, 2)
     }
     
     return structured

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Set
 from datetime import datetime
 
-import database as db
-from data_processor import analyze_sentiment
+from . import database as db
+from .data_processor import analyze_sentiment
 
 
 # Load questions

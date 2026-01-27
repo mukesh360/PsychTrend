@@ -9,17 +9,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from models import (
+from .models import (
     ChatRequest, ChatResponse, SessionCreate, SessionResponse,
     ResetResponse, AnalysisResult, ReportResponse
 )
-import database as db
-from chat_logic import get_next_question, start_conversation
-from data_processor import structure_response, process_incomplete_response, aggregate_session_data
-from ml_engine.sentiment import analyze_sentiment_detailed, get_emotional_profile
-from ml_engine.trends import get_all_trends
-from ml_engine.clustering import get_behavioral_clusters
-from ml_engine.predictor import get_predictions, identify_strengths, identify_growth_areas
+from . import database as db
+from .chat_logic import get_next_question, start_conversation
+from .data_processor import structure_response, process_incomplete_response, aggregate_session_data
+from .ml_engine.sentiment import analyze_sentiment_detailed, get_emotional_profile
+from .ml_engine.trends import get_all_trends
+from .ml_engine.clustering import get_behavioral_clusters
+from .ml_engine.predictor import get_predictions, identify_strengths, identify_growth_areas
 
 
 # Initialize FastAPI app
