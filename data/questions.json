@@ -1,0 +1,122 @@
+{
+    "categories": {
+        "introduction": {
+            "questions": [
+                "Hello! I'm here to help you reflect on your life experiences. What should I call you?",
+                "Nice to meet you! This is a safe space to share your thoughts. Shall we begin?"
+            ]
+        },
+        "education": {
+            "questions": [
+                "What was your most memorable learning experience?",
+                "How would you describe your approach to learning new things?",
+                "Were there any challenges during your education? How did you handle them?",
+                "What subject or skill are you most proud of mastering?"
+            ],
+            "follow_ups": {
+                "positive": [
+                    "That's wonderful! What made that experience so impactful?"
+                ],
+                "negative": [
+                    "I appreciate you sharing that. What helped you get through it?"
+                ],
+                "neutral": [
+                    "Tell me more about that experience."
+                ]
+            }
+        },
+        "career": {
+            "questions": [
+                "What drew you to your current or most recent field of work?",
+                "What's a professional achievement you're particularly proud of?",
+                "How do you typically handle pressure or deadlines at work?",
+                "What skills have you developed through your career journey?"
+            ],
+            "follow_ups": {
+                "positive": [
+                    "Impressive! What do you think contributed most to that success?"
+                ],
+                "negative": [
+                    "That sounds challenging. How did you cope with it?"
+                ],
+                "neutral": [
+                    "Interesting! What aspects do you find most fulfilling?"
+                ]
+            }
+        },
+        "milestones": {
+            "questions": [
+                "What moment in your life do you consider a significant turning point?",
+                "Is there a personal accomplishment that means a lot to you?",
+                "What goal are you currently working towards?",
+                "What's something you've achieved that once seemed impossible?"
+            ],
+            "follow_ups": {
+                "positive": [
+                    "That's inspiring! How did it change your perspective?"
+                ],
+                "negative": [
+                    "What strength did you discover about yourself through that?"
+                ],
+                "neutral": [
+                    "What motivated you to pursue that path?"
+                ]
+            }
+        },
+        "habits": {
+            "questions": [
+                "How would you describe your typical daily routine?",
+                "What habits help you stay productive or focused?",
+                "What do you regularly do for your personal well-being?",
+                "How do you balance work or responsibilities with personal time?"
+            ],
+            "follow_ups": {
+                "positive": [
+                    "Great approach! How long have you maintained this habit?"
+                ],
+                "negative": [
+                    "What's been the biggest challenge in maintaining routines?"
+                ],
+                "neutral": [
+                    "How does that fit into your lifestyle?"
+                ]
+            }
+        },
+        "challenges": {
+            "questions": [
+                "What's a significant challenge you've successfully overcome?",
+                "How do you typically respond when things don't go as planned?",
+                "What helps you stay motivated during difficult times?",
+                "What's a lesson you've learned from a past setback?"
+            ],
+            "follow_ups": {
+                "positive": [
+                    "Your resilience is admirable! What kept you going?"
+                ],
+                "negative": [
+                    "What support or resources helped you through that?"
+                ],
+                "neutral": [
+                    "What did that experience teach you about yourself?"
+                ]
+            }
+        },
+        "closing": {
+            "questions": [
+                "Is there anything else about your experiences you'd like to share?",
+                "Thank you for opening up! Your personalized insight report is now ready."
+            ]
+        }
+    },
+    "conversation_flow": [
+        "introduction",
+        "education",
+        "career",
+        "milestones",
+        "habits",
+        "challenges",
+        "closing"
+    ],
+    "questions_per_category": 3,
+    "total_target_questions": 25
+}

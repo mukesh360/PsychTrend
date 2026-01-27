@@ -1,0 +1,145 @@
+{
+    "sample_sessions": [
+        {
+            "session_id": "demo_001",
+            "user_name": "Alex",
+            "responses": [
+                {
+                    "category": "education",
+                    "event_description": "Completed engineering degree with distinction, struggled initially but found passion in programming",
+                    "timestamp": "2024-01-15T10:30:00",
+                    "sentiment_score": 0.7,
+                    "keywords": [
+                        "achievement",
+                        "growth",
+                        "passion",
+                        "challenge"
+                    ]
+                },
+                {
+                    "category": "education",
+                    "event_description": "Self-taught machine learning through online courses during pandemic",
+                    "timestamp": "2024-01-15T10:35:00",
+                    "sentiment_score": 0.8,
+                    "keywords": [
+                        "self-improvement",
+                        "initiative",
+                        "learning"
+                    ]
+                },
+                {
+                    "category": "career",
+                    "event_description": "Got first job after multiple rejections, felt determined not to give up",
+                    "timestamp": "2024-01-15T10:40:00",
+                    "sentiment_score": 0.6,
+                    "keywords": [
+                        "perseverance",
+                        "resilience",
+                        "determination"
+                    ]
+                },
+                {
+                    "category": "career",
+                    "event_description": "Led a team project successfully, discovered leadership skills",
+                    "timestamp": "2024-01-15T10:45:00",
+                    "sentiment_score": 0.9,
+                    "keywords": [
+                        "leadership",
+                        "teamwork",
+                        "success"
+                    ]
+                },
+                {
+                    "category": "milestones",
+                    "event_description": "Moved to a new city for better opportunities, challenging but rewarding",
+                    "timestamp": "2024-01-15T10:50:00",
+                    "sentiment_score": 0.65,
+                    "keywords": [
+                        "change",
+                        "growth",
+                        "adaptation"
+                    ]
+                },
+                {
+                    "category": "habits",
+                    "event_description": "Started morning exercise routine 6 months ago, feel more energetic",
+                    "timestamp": "2024-01-15T10:55:00",
+                    "sentiment_score": 0.85,
+                    "keywords": [
+                        "discipline",
+                        "health",
+                        "consistency"
+                    ]
+                },
+                {
+                    "category": "habits",
+                    "event_description": "Struggle with work-life balance, working on setting boundaries",
+                    "timestamp": "2024-01-15T11:00:00",
+                    "sentiment_score": 0.4,
+                    "keywords": [
+                        "balance",
+                        "self-awareness",
+                        "improvement"
+                    ]
+                },
+                {
+                    "category": "challenges",
+                    "event_description": "Overcame fear of public speaking by joining a local club",
+                    "timestamp": "2024-01-15T11:05:00",
+                    "sentiment_score": 0.75,
+                    "keywords": [
+                        "courage",
+                        "growth",
+                        "confidence"
+                    ]
+                }
+            ]
+        }
+    ],
+    "sample_analysis": {
+        "motivation_trend": {
+            "overall_score": 0.72,
+            "trend_direction": "upward",
+            "description": "Shows consistent motivation with notable peaks during achievement-related events"
+        },
+        "consistency_score": {
+            "value": 0.68,
+            "category": "moderate-high",
+            "description": "Demonstrates ability to maintain habits and routines with occasional variability"
+        },
+        "growth_orientation": {
+            "score": 0.85,
+            "indicators": [
+                "self-learning",
+                "adaptation",
+                "challenge-seeking"
+            ],
+            "description": "Strong inclination towards personal and professional development"
+        },
+        "stress_response": {
+            "pattern": "active-coping",
+            "resilience_score": 0.7,
+            "description": "Tends to address challenges directly with problem-solving approach"
+        },
+        "behavioral_clusters": [
+            {
+                "cluster_name": "achiever",
+                "affinity": 0.78,
+                "traits": [
+                    "goal-oriented",
+                    "persistent",
+                    "growth-minded"
+                ]
+            },
+            {
+                "cluster_name": "adapter",
+                "affinity": 0.65,
+                "traits": [
+                    "flexible",
+                    "open-to-change",
+                    "resilient"
+                ]
+            }
+        ]
+    }
+}

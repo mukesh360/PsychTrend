@@ -1,0 +1,175 @@
+# Psychological Trend Analysis System - Implementation Plan
+
+Build a complete chatbot-based behavioral analysis system with adaptive questioning, ML-powered trend detection, and insight report generation.
+
+---
+
+## Proposed Changes
+
+### Project Structure
+
+```
+c:\HACKTHON\
+├── backend/
+│   ├── main.py              # FastAPI application
+│   ├── models.py            # Pydantic models
+│   ├── database.py          # SQLite setup
+│   ├── chat_logic.py        # Adaptive questioning
+│   ├── data_processor.py    # Response structuring
+│   └── ml_engine/
+│       ├── __init__.py
+│       ├── sentiment.py     # Sentiment analysis
+│       ├── trends.py        # Time-series analysis
+│       ├── clustering.py    # K-Means clustering
+│       └── predictor.py     # Behavior prediction
+├── frontend/
+│   ├── index.html           # Main chat interface
+│   ├── report.html          # Report display page
+│   ├── css/
+│   │   └── styles.css       # Custom styles
+│   └── js/
+│       ├── chat.js          # Chat functionality
+│       └── report.js        # Report rendering
+├── data/
+│   ├── questions.json       # Question bank
+│   └── sample_data.json     # Example dataset
+├── requirements.txt
+└── README.md
+```
+
+---
+
+### Backend Components
+
+#### [NEW] [main.py](file:///c:/HACKTHON/backend/main.py)
+- FastAPI app with CORS middleware
+- Endpoints: `/chat`, `/session`, `/analysis`, `/report`, `/reset`
+- Serve static frontend files
+
+#### [NEW] [models.py](file:///c:/HACKTHON/backend/models.py)
+- `Message`: user/bot message structure
+- `ChatSession`: session tracking
+- `StructuredResponse`: processed user data
+- `PredictionResult`: analysis output
+
+#### [NEW] [database.py](file:///c:/HACKTHON/backend/database.py)
+- SQLite connection for local storage
+- Tables: `sessions`, `responses`, `reports`
+- CRUD operations
+
+#### [NEW] [chat_logic.py](file:///c:/HACKTHON/backend/chat_logic.py)
+- Question categories: education, career, milestones, habits, challenges
+- Context-aware follow-up selection
+- Conversation flow management
+
+#### [NEW] [data_processor.py](file:///c:/HACKTHON/backend/data_processor.py)
+- Convert chat to structured JSON
+- Extract: category, event_description, timestamp, sentiment_score
+- Handle incomplete responses
+
+---
+
+### ML Analysis Engine
+
+#### [NEW] [sentiment.py](file:///c:/HACKTHON/backend/ml_engine/sentiment.py)
+- Rule-based sentiment scoring using word lists
+- Polarity calculation (-1 to +1 scale)
+
+#### [NEW] [trends.py](file:///c:/HACKTHON/backend/ml_engine/trends.py)
+- Time-series trend detection
+- Moving averages for motivation/consistency
+- Change point detection
+
+#### [NEW] [clustering.py](file:///c:/HACKTHON/backend/ml_engine/clustering.py)
+- K-Means for behavioral pattern grouping
+- Feature extraction from responses
+
+#### [NEW] [predictor.py](file:///c:/HACKTHON/backend/ml_engine/predictor.py)
+- Random Forest for behavior prediction
+- Probability-based outputs
+- Explainable feature importance
+
+---
+
+### Frontend Components
+
+#### [NEW] [index.html](file:///c:/HACKTHON/frontend/index.html)
+- Bootstrap 5 chat interface
+- Message bubbles (user/bot differentiation)
+- Typing indicator animation
+- Dark/light theme toggle
+- Responsive layout
+
+#### [NEW] [report.html](file:///c:/HACKTHON/frontend/report.html)
+- Trend visualizations
+- Behavioral summaries
+- Strength patterns & growth areas
+- Disclaimer prominently displayed
+
+#### [NEW] [styles.css](file:///c:/HACKTHON/frontend/css/styles.css)
+- Chat bubble styling
+- Animations (typing, message entry)
+- Theme variables
+- Responsive breakpoints
+
+#### [NEW] [chat.js](file:///c:/HACKTHON/frontend/js/chat.js)
+- Fetch API calls to backend
+- Dynamic message rendering
+- Auto-scroll behavior
+- Session management
+
+---
+
+### Data Files
+
+#### [NEW] [questions.json](file:///c:/HACKTHON/data/questions.json)
+- Question bank organized by category
+- Follow-up question mappings
+- Conversational phrasing
+
+#### [NEW] [sample_data.json](file:///c:/HACKTHON/data/sample_data.json)
+- Example user responses
+- Demo analysis results
+
+---
+
+## Verification Plan
+
+### Automated Tests
+```bash
+# Install dependencies
+cd c:\HACKTHON
+pip install -r requirements.txt
+
+# Run backend server
+cd backend
+uvicorn main:app --reload --port 8000
+
+# API endpoint tests (using curl or Postman)
+# 1. Create session: POST /session
+# 2. Send message: POST /chat
+# 3. Get analysis: GET /analysis/{session_id}
+# 4. Get report: GET /report/{session_id}
+```
+
+### Manual Verification
+1. **Chat Flow Test**: Open `http://localhost:8000` in browser, complete full conversation
+2. **Theme Toggle**: Verify dark/light mode switching works
+3. **Report Generation**: Complete chat and verify report displays with trends
+4. **Reset Function**: Test data deletion works properly
+5. **Responsive Check**: Test on mobile viewport sizes
+
+---
+
+## Ethical Safeguards
+
+- All analysis text uses non-clinical language
+- Disclaimer appears on every report:
+  > "This is not medical or psychological diagnosis. For professional guidance, consult a qualified professional."
+- User data stored locally only (SQLite)
+- Complete data reset available via `/reset` endpoint
+
+---
+
+> [!IMPORTANT]
+> This system provides behavioral insights only. No diagnostic or medical terminology will be used in any output.
