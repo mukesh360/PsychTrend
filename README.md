@@ -210,6 +210,201 @@ MIT License - Feel free to use and modify for educational purposes.
 **Disclaimer**: This system provides behavioral insights for self-reflection only. 
 It is not a substitute for professional psychological or medical advice.
 
+---
+
+## 🤖 LOCAL LLM INTEGRATION (Ollama)
+
+This system integrates **Ollama** with the **qwen2.5:7b** model to enhance answer quality, insight explanations, and report generation while maintaining strict ethical guardrails.
+
+### Architecture Overview
+
+```
+User Input
+    ↓
+┌─────────────────────────────────────┐
+│  LLM Layer 1: Input Normalization   │  ← Clean weak inputs ("kk", "idk")
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  ML Analysis Layer (Source of Truth)│  ← Sentiment, Trends, Clustering
+│  - Sentiment Analysis               │
+│  - Trend Detection                  │
+│  - Behavioral Clustering            │
+│  - Predictions                      │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  LLM Layer 2: Report Generation     │  ← Humanize insights & write reports
+└─────────────────────────────────────┘
+    ↓
+Final Report
+```
+
+> ⚠️ **IMPORTANT**: The LLM NEVER bypasses the ML analysis layer. All statistical outputs remain the source of truth.
+
+### LLM Features
+
+| Feature | Description | Use Case |
+|---------|-------------|----------|
+| **Input Normalization** | Cleans weak inputs like "kk", "idk", "meh" | Better feature extraction |
+| **Question Enhancement** | Generates engaging follow-up questions | Improved conversation flow |
+| **Insight Explanation** | Converts numerical trends to human language | Understandable reports |
+| **Report Generation** | Creates comprehensive behavioral reports | Executive summaries |
+
+### Installation
+
+#### 1. Install Ollama
+
+```powershell
+# Windows (using winget)
+winget install Ollama.Ollama
+
+# Or download from: https://ollama.ai/download
+```
+
+#### 2. Pull the qwen2.5:7b Model
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+#### 3. Verify Installation
+
+```bash
+# Check Ollama is running
+ollama list
+
+# Should show: qwen2.5:7b
+```
+
+#### 4. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### New API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/llm/health` | Check Ollama LLM connection status |
+| GET | `/report-enhanced/{session_id}` | Get LLM-enhanced comprehensive report |
+
+### Example: LLM Health Check
+
+```bash
+curl http://localhost:8000/llm/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "ollama_running": true,
+  "model_available": true,
+  "configured_model": "qwen2.5:7b",
+  "available_models": ["qwen2.5:7b"]
+}
+```
+
+### Example: Input Normalization
+
+**Before (weak input):**
+```
+"kk yeah I guess work is fine nothing special"
+```
+
+**After (normalized):**
+```
+"Work has been stable, without notable events."
+```
+
+### Example: LLM-Enhanced Report
+
+```bash
+curl http://localhost:8000/report-enhanced/{session_id}
+```
+
+Response includes:
+```json
+{
+  "executive_summary": "Based on 12 responses from Alex, you demonstrate a primarily 'Achiever' behavioral profile with strong goal orientation (0.72) and consistent growth mindset (0.85). Your responses indicate positive engagement across career and learning domains. Note: This is not a medical or psychological diagnosis.",
+  "full_report_markdown": "## Your Behavioral Profile\n...",
+  "trend_explanations": {
+    "motivation": "Your motivation score of 0.72 shows an upward trend, indicating increasing enthusiasm...",
+    "consistency": "With a consistency score of 0.68, you demonstrate reliable behavioral patterns..."
+  },
+  "llm_enhanced": true,
+  "llm_model": "qwen2.5:7b"
+}
+```
+
+### Guardrails & Safety
+
+The LLM integration includes multiple safety layers:
+
+1. **Forbidden Terms Validation**
+   - Blocks clinical/diagnostic language
+   - Sanitizes output if violations detected
+
+2. **Prompt Engineering**
+   - System prompts enforce non-clinical language
+   - Explicit rules prevent hallucination
+
+3. **Fallback Mechanisms**
+   - Graceful degradation if Ollama is unavailable
+   - Template-based fallbacks for all features
+
+4. **Output Validation**
+   - All LLM outputs checked before display
+   - Automatic sanitization of problematic content
+
+### LLM Configuration
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| Model | `qwen2.5:7b` | Balance of quality and speed |
+| Temperature | `0.2` | Consistent, factual outputs |
+| Max Tokens | `1024` | Sufficient for report sections |
+| Timeout | `60s` | Handle slower inference |
+
+### File Structure (LLM Components)
+
+```
+backend/
+├── ollama_client.py    # Async HTTP client for Ollama API
+├── llm_prompts.py      # Prompt templates with guardrails
+├── llm_service.py      # High-level LLM service functions
+└── ...existing files...
+```
+
+### For Hackathon Judges
+
+**Key Innovation Points:**
+
+1. **Local LLM** - Privacy-respecting, runs entirely on local hardware
+2. **Layered Architecture** - ML analysis is source of truth, LLM only explains
+3. **Ethical Guardrails** - Prevents clinical language and hallucination
+4. **Graceful Fallback** - System works without LLM if unavailable
+5. **Production-Ready** - Retry logic, health checks, error handling
+
+**Test the Integration:**
+
+```bash
+# 1. Start Ollama (if not running)
+ollama serve
+
+# 2. Start the backend
+cd backend
+uvicorn main:app --reload --port 8000
+
+# 3. Check LLM health
+curl http://localhost:8000/llm/health
+
+# 4. Complete a chat session and get enhanced report
+curl http://localhost:8000/report-enhanced/{session_id}
+```
+
 
 
 Implementation setup ::

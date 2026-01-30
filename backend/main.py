@@ -9,17 +9,22 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from .models import (
+from models import (
     ChatRequest, ChatResponse, SessionCreate, SessionResponse,
-    ResetResponse, AnalysisResult, ReportResponse
+    ResetResponse, AnalysisResult, ReportResponse,
+    LLMHealthStatus, EnhancedReportResponse
 )
-from . import database as db
-from .chat_logic import get_next_question, start_conversation
-from .data_processor import structure_response, process_incomplete_response, aggregate_session_data
-from .ml_engine.sentiment import analyze_sentiment_detailed, get_emotional_profile
-from .ml_engine.trends import get_all_trends
-from .ml_engine.clustering import get_behavioral_clusters
-from .ml_engine.predictor import get_predictions, identify_strengths, identify_growth_areas
+import database as db
+from chat_logic import get_next_question, start_conversation
+from data_processor import structure_response, process_incomplete_response, aggregate_session_data
+from ml_engine.sentiment import analyze_sentiment_detailed, get_emotional_profile
+from ml_engine.trends import get_all_trends
+from ml_engine.clustering import get_behavioral_clusters
+from ml_engine.predictor import get_predictions, identify_strengths, identify_growth_areas
+
+# LLM Integration
+from llm_service import get_llm_service
+from ollama_client import check_ollama_health, DEFAULT_MODEL
 
 
 # Initialize FastAPI app
@@ -111,7 +116,7 @@ async def create_session(session_data: Optional[SessionCreate] = None):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Handle chat message"""
+    """Handle chat message with LLM-enhanced natural responses"""
     session = db.get_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -141,11 +146,19 @@ async def chat(request: ChatRequest):
         )
         db.add_response(request.session_id, structured)
     
-    # Get next question
-    next_message, is_complete, category, progress = get_next_question(
-        request.session_id,
-        request.message
-    )
+    # Get next question - use LLM-enhanced version for natural responses
+    try:
+        from chat_logic import get_next_question_enhanced
+        next_message, is_complete, category, progress = await get_next_question_enhanced(
+            request.session_id,
+            request.message
+        )
+    except Exception:
+        # Fallback to standard logic if LLM fails
+        next_message, is_complete, category, progress = get_next_question(
+            request.session_id,
+            request.message
+        )
     
     # Save bot message
     db.add_to_conversation(request.session_id, 'bot', next_message)
@@ -344,6 +357,122 @@ async def reset_all_data():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/llm/health", response_model=LLMHealthStatus)
+async def llm_health_check():
+    """Check Ollama LLM connection status"""
+    health = await check_ollama_health()
+    return LLMHealthStatus(
+        status=health.get("status", "error"),
+        ollama_running=health.get("ollama_running", False),
+        model_available=health.get("model_available", False),
+        configured_model=health.get("configured_model", DEFAULT_MODEL),
+        available_models=health.get("available_models", []),
+        error=health.get("error")
+    )
+
+
+@app.get("/report-enhanced/{session_id}", response_model=EnhancedReportResponse)
+async def get_enhanced_report(session_id: str):
+    """
+    Generate LLM-enhanced comprehensive report.
+    Falls back to standard report if LLM is unavailable.
+    """
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    responses = db.get_session_responses(session_id)
+    
+    if len(responses) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 3 responses for report generation"
+        )
+    
+    # Get all ML analyses (source of truth)
+    aggregated = aggregate_session_data(responses)
+    trends = get_all_trends(responses)
+    clusters = get_behavioral_clusters(responses)
+    predictions = get_predictions(responses)
+    strengths = identify_strengths(responses)
+    growth_areas = identify_growth_areas(responses)
+    
+    user_name = session.get('user_name', 'User')
+    
+    # Get LLM service for enhanced generation
+    llm_service = get_llm_service()
+    
+    # Generate LLM-enhanced report
+    llm_report = await llm_service.generate_full_report(
+        user_name=user_name,
+        response_count=len(responses),
+        trends=trends,
+        clusters=clusters,
+        predictions=predictions,
+        strengths=strengths,
+        growth_areas=growth_areas
+    )
+    
+    # Format trend analysis for response
+    trend_analysis = {
+        'motivation': {
+            'score': trends['motivation']['score'],
+            'direction': trends['motivation']['trend_direction'],
+            'description': trends['motivation']['description']
+        },
+        'consistency': {
+            'score': trends['consistency']['score'],
+            'direction': trends['consistency']['trend_direction'],
+            'description': trends['consistency']['description']
+        },
+        'growth_orientation': {
+            'score': trends['growth']['score'],
+            'direction': trends['growth']['trend_direction'],
+            'description': trends['growth']['description']
+        },
+        'stress_response': {
+            'pattern': trends['stress_response'].get('pattern', 'balanced'),
+            'score': trends['stress_response']['score'],
+            'description': trends['stress_response']['description']
+        }
+    }
+    
+    # Format behavioral profile
+    behavioral_profile = {
+        'primary_archetype': clusters['archetypes'][0] if clusters['archetypes'] else None,
+        'secondary_archetypes': clusters['archetypes'][1:] if len(clusters['archetypes']) > 1 else [],
+        'category_breakdown': clusters['category_analysis']
+    }
+    
+    # Format predictions
+    formatted_predictions = [
+        {
+            'type': p['prediction_type'],
+            'probability': p.get('probability'),
+            'confidence': p['confidence'],
+            'explanation': p['explanation'],
+            'factors': p['contributing_factors']
+        }
+        for p in predictions
+    ]
+    
+    return EnhancedReportResponse(
+        session_id=session_id,
+        generated_at=datetime.now(),
+        user_name=user_name,
+        executive_summary=llm_report.get('executive_summary', ''),
+        full_report_markdown=llm_report.get('full_report_markdown'),
+        trend_analysis=trend_analysis,
+        trend_explanations=llm_report.get('trend_explanations', {}),
+        behavioral_profile=behavioral_profile,
+        predictions=formatted_predictions,
+        strengths=llm_report.get('strengths', strengths),
+        growth_opportunities=llm_report.get('growth_opportunities', growth_areas),
+        llm_enhanced=llm_report.get('llm_enhanced', False),
+        llm_model=DEFAULT_MODEL if llm_report.get('llm_enhanced') else None
+    )
 
 
 # Run with: uvicorn main:app --reload --port 8000

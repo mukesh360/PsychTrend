@@ -47,6 +47,30 @@ KEYWORD_PATTERNS = {
     'adaptation': r'\b(adapted|adjusted|changed|flexible|transitioned)\b'
 }
 
+# Negation patterns that invalidate keyword matches
+NEGATION_CONTEXT_PATTERN = re.compile(
+    r"(nothing|no one|never|don't|didn't|doesn't|haven't|hasn't|hadn't|can't|couldn't|won't|wouldn't|not\s+\w+|none|barely|rarely|hardly)\s+(\w+\s+){0,3}"
+)
+
+# Patterns that indicate keywords are expressed negatively
+NEGATIVE_CONTEXT_PHRASES = {
+    'helped': ['nothing helped', 'didn\'t help', 'not helped', 'never helped', 'no help'],
+    'support': ['no support', 'didn\'t support', 'never support', 'unsupported'],
+    'team': ['no team', 'not a team'],
+    'accomplished': ['nothing accomplished', 'haven\'t accomplished', 'didn\'t accomplish'],
+    'achieved': ['nothing achieved', 'haven\'t achieved', 'didn\'t achieve', 'no achievement'],
+    'proud': ['not proud', 'don\'t feel proud', 'never proud'],
+    'passionate': ['not passionate', 'no passion', 'never passionate'],
+    'enjoy': ['don\'t enjoy', 'didn\'t enjoy', 'never enjoy'],
+    'love': ['don\'t love', 'didn\'t love', 'never love'],
+    'routine': ['no routine', 'don\'t have routine', 'lack routine'],
+    'habit': ['no habit', 'don\'t have habit', 'bad habit'],
+    'discipline': ['no discipline', 'lack discipline'],
+    'overcame': ['never overcame', 'didn\'t overcome', 'haven\'t overcome'],
+    'learned': ['never learned', 'didn\'t learn', 'haven\'t learned'],
+    'improved': ['never improved', 'didn\'t improve', 'haven\'t improved'],
+}
+
 # Low-quality input patterns
 DISMISSIVE_RESPONSES = {
     'no', 'nope', 'nah', 'nothing', 'none', 'idk', 'dunno', 'na', 'n/a',
@@ -198,13 +222,53 @@ def get_sentiment_category(score: float) -> str:
 
 
 def extract_keywords(text: str) -> List[str]:
-    """Extract relevant keywords from text"""
+    """
+    Extract relevant keywords from text.
+    STRICT: Only extract keywords when used in positive context.
+    Ignores keywords preceded by negation or expressed in negative context.
+    """
     keywords = []
     text_lower = text.lower()
     
     for keyword, pattern in KEYWORD_PATTERNS.items():
-        if re.search(pattern, text_lower):
-            keywords.append(keyword)
+        match = re.search(pattern, text_lower)
+        if match:
+            matched_word = match.group()
+            
+            # STRICT: Check if keyword is in negative context
+            is_negated = False
+            
+            # Check for negative context phrases for this matched word
+            if matched_word in NEGATIVE_CONTEXT_PHRASES:
+                for neg_phrase in NEGATIVE_CONTEXT_PHRASES[matched_word]:
+                    if neg_phrase in text_lower:
+                        is_negated = True
+                        break
+            
+            # Check for general negation pattern before the keyword
+            if not is_negated:
+                # Look for negation within 5 words before the keyword
+                match_pos = match.start()
+                context_before = text_lower[max(0, match_pos - 50):match_pos]
+                if NEGATION_CONTEXT_PATTERN.search(context_before):
+                    is_negated = True
+            
+            # Check for explicit negative phrases in the full text
+            if not is_negated:
+                negative_indicators = [
+                    "don't have", "didn't have", "no ", "never ",
+                    "nothing ", "not ", "lack ", "without "
+                ]
+                for neg in negative_indicators:
+                    # Check if negation is close to the matched word (within 30 chars)
+                    neg_pos = text_lower.find(neg)
+                    if neg_pos != -1 and abs(neg_pos - match_pos) < 30:
+                        is_negated = True
+                        break
+            
+            # Only add keyword if NOT negated
+            if not is_negated:
+                keywords.append(keyword)
     
     return keywords
 
@@ -328,3 +392,58 @@ def aggregate_session_data(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         'all_keywords': list(set(all_keywords)),
         'sentiment_timeline': sentiment_timeline
     }
+
+
+# =============================================================================
+# LLM-Enhanced Processing
+# =============================================================================
+
+async def structure_response_with_llm(
+    raw_response: str,
+    category: str,
+    session_id: str
+) -> Dict[str, Any]:
+    """
+    Convert raw chat response into structured data with LLM normalization.
+    
+    This function:
+    1. Uses LLM to normalize weak/unclear inputs
+    2. Performs standard feature extraction on normalized text
+    3. Preserves both original and normalized responses
+    
+    Returns dict with standard fields plus:
+    - normalized_response
+    - llm_normalized (bool)
+    """
+    # Import here to avoid circular imports
+    from llm_service import get_llm_service
+    
+    llm_service = get_llm_service()
+    
+    # Try to normalize with LLM
+    normalization = await llm_service.normalize_input(raw_response, category)
+    
+    # Determine which text to analyze
+    normalized_text = normalization.get('normalized') or raw_response
+    used_llm = normalization.get('used_llm', False)
+    
+    # Perform standard analysis on the best available text
+    sentiment_score = analyze_sentiment(normalized_text)
+    input_quality = validate_input_quality(raw_response)  # Quality based on original
+    
+    structured = {
+        'session_id': session_id,
+        'category': category,
+        'event_description': extract_event_description(normalized_text, category),
+        'timestamp': datetime.now().isoformat(),
+        'sentiment_score': round(sentiment_score, 3),
+        'sentiment_category': get_sentiment_category(sentiment_score),
+        'keywords': extract_keywords(normalized_text),
+        'raw_response': raw_response,
+        'normalized_response': normalized_text if normalized_text != raw_response else None,
+        'input_quality': round(input_quality, 2),
+        'llm_normalized': used_llm
+    }
+    
+    return structured
+

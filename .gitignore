@@ -49,6 +49,7 @@ logs/
 .env
 .env.local
 .env.*.local
+.env.production
 
 # OS generated files
 .DS_Store
@@ -87,6 +88,7 @@ pip-delete-this-directory.txt
 node_modules/
 npm-debug.log
 yarn-error.log
+package-lock.json
 
 # Temporary files
 *.tmp
@@ -94,5 +96,21 @@ yarn-error.log
 tmp/
 temp/
 
-# Gemini/Antigravity artifacts (optional - remove if you want to track these)
+# Gemini/Antigravity artifacts
 .gemini/
+
+# Ollama models cache (if stored locally)
+.ollama/
+ollama_cache/
+
+# Session data (if you don't want to track user sessions)
+sessions/
+*.session
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Resolved plan files (temporary)
+*.resolved

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Set
 from datetime import datetime
 
-from . import database as db
-from .data_processor import analyze_sentiment
+import database as db
+from data_processor import analyze_sentiment
 
 
 # Load questions
@@ -137,7 +137,25 @@ def get_next_question(session_id: str, user_response: Optional[str] = None) -> T
                 db.update_session(session_id, questions_in_category=2)
                 return (question, False, current_category, progress)
         
-        # Move to next category
+        elif questions_in_category == 2 and user_response:
+            # Check if user said no/not ready
+            response_lower = user_response.strip().lower()
+            negative_responses = {'no', 'nope', 'nah', 'not ready', 'not yet', 'later', 'no thanks'}
+            
+            if response_lower in negative_responses or response_lower.startswith('no'):
+                # User said no - acknowledge and ask again gently
+                session = db.get_session(session_id)
+                name = session.get('user_name', 'Friend')
+                return (
+                    f"No problem, {name}! Take your time. Just let me know when you're ready to begin by saying 'yes' or 'ready'. 😊",
+                    False, current_category, progress
+                )
+            
+            # User said yes or anything else - proceed
+            # Move to next category
+            return move_to_next_category(session_id, category_index, total_categories)
+        
+        # Move to next category (fallback)
         return move_to_next_category(session_id, category_index, total_categories)
     
     # === CLOSING ===
@@ -248,3 +266,165 @@ def start_conversation(session_id: str) -> Tuple[str, str, float]:
     )
     
     return (first_q, "introduction", 0.0)
+
+
+# =============================================================================
+# LLM-Enhanced Conversational Responses
+# =============================================================================
+
+async def humanize_bot_response(
+    base_message: str,
+    user_name: str,
+    user_response: Optional[str] = None,
+    category: str = ""
+) -> str:
+    """
+    Use LLM to make bot responses more natural and human-like.
+    Falls back to base_message if LLM is unavailable.
+    """
+    try:
+        from llm_service import get_llm_service
+        
+        llm_service = get_llm_service()
+        
+        if not await llm_service.is_available():
+            return base_message
+        
+        # Create a prompt for humanizing the response
+        prompt = f"""Rewrite this chatbot message to sound more warm, natural, and human-like.
+
+ORIGINAL MESSAGE: "{base_message}"
+USER'S NAME: {user_name}
+CONTEXT: Conversation about {category if category else 'getting to know them'}
+{f'USER JUST SAID: "{user_response}"' if user_response else ''}
+
+RULES:
+- Keep the same meaning and intent
+- Make it sound like a friendly human, not a robot
+- Use natural conversational language
+- Add appropriate warmth and empathy
+- Keep it concise (1-2 sentences max)
+- Do NOT add clinical or medical language
+- Do NOT ask multiple questions
+
+Return ONLY the rewritten message, nothing else."""
+
+        result = await llm_service.client.generate(
+            prompt=prompt,
+            system_prompt="You are a warm, empathetic conversation partner helping someone reflect on their life experiences. Be natural and human-like.",
+            temperature=0.4,
+            max_tokens=150
+        )
+        
+        if result.get("success"):
+            humanized = result.get("response", "").strip()
+            # Remove any quotes if the LLM added them
+            humanized = humanized.strip('"\'')
+            if humanized and len(humanized) > 10:
+                return humanized
+        
+        return base_message
+    
+    except Exception:
+        return base_message
+
+
+async def generate_empathetic_response(
+    user_response: str,
+    category: str,
+    next_question: str,
+    user_name: str
+) -> str:
+    """
+    Generate an empathetic acknowledgment + next question using LLM.
+    Makes the conversation feel more natural and responsive.
+    """
+    try:
+        from llm_service import get_llm_service
+        
+        llm_service = get_llm_service()
+        
+        if not await llm_service.is_available():
+            return next_question
+        
+        prompt = f"""You are having a friendly conversation with {user_name} about their life experiences.
+
+They just shared: "{user_response}"
+Topic: {category}
+Next question to ask: "{next_question}"
+
+Generate a natural response that:
+1. Briefly acknowledges what they shared (1 short sentence)
+2. Then asks the next question naturally
+
+RULES:
+- Be warm, supportive, and empathetic
+- Sound like a caring friend, not a therapist or robot
+- Keep total response to 2-3 sentences max
+- Do NOT use clinical or psychological terms
+- Do NOT analyze or diagnose
+- Make it feel like natural conversation
+
+Return ONLY the response, no explanations."""
+
+        result = await llm_service.client.generate(
+            prompt=prompt,
+            system_prompt="You are a warm, empathetic friend helping someone reflect on their life journey. Be genuine and caring.",
+            temperature=0.5,
+            max_tokens=200
+        )
+        
+        if result.get("success"):
+            response = result.get("response", "").strip()
+            response = response.strip('"\'')
+            
+            # Validate no clinical terms
+            from llm_prompts import validate_output, sanitize_output
+            is_valid, _ = validate_output(response)
+            if not is_valid:
+                response = sanitize_output(response)
+            
+            if response and len(response) > 20:
+                return response
+        
+        return next_question
+    
+    except Exception:
+        return next_question
+
+
+async def get_next_question_enhanced(
+    session_id: str,
+    user_response: Optional[str] = None
+) -> Tuple[str, bool, str, float]:
+    """
+    Enhanced version of get_next_question that uses LLM for natural responses.
+    """
+    # Get base response from standard logic
+    base_message, is_complete, category, progress = get_next_question(session_id, user_response)
+    
+    # If complete or no response to react to, just humanize the message
+    if is_complete or not user_response:
+        session = db.get_session(session_id)
+        user_name = session.get('user_name', 'Friend') if session else 'Friend'
+        humanized = await humanize_bot_response(base_message, user_name, user_response, category)
+        return (humanized, is_complete, category, progress)
+    
+    # For ongoing conversation, generate empathetic response
+    session = db.get_session(session_id)
+    user_name = session.get('user_name', 'Friend') if session else 'Friend'
+    
+    # Skip humanization for introduction phase (already handled)
+    if category == "introduction":
+        return (base_message, is_complete, category, progress)
+    
+    # Generate empathetic response with LLM
+    enhanced_response = await generate_empathetic_response(
+        user_response=user_response,
+        category=category,
+        next_question=base_message,
+        user_name=user_name
+    )
+    
+    return (enhanced_response, is_complete, category, progress)
+

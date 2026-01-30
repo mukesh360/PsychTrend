@@ -298,17 +298,26 @@ def get_predictions(responses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def identify_strengths(responses: List[Dict[str, Any]]) -> List[str]:
     """
     Identify key strengths from responses.
+    STRICT: Only include strengths with actual supporting evidence.
+    If sentiment is negative and no keywords found, return honest assessment.
     """
     if not responses:
         return ['Unable to identify strengths from limited data']
     
-    strengths = []
+    # Calculate sentiment context
+    sentiments = [r.get('sentiment_score', 0) for r in responses]
+    avg_sentiment = np.mean(sentiments)
+    qualities = [r.get('input_quality', 1.0) for r in responses]
+    avg_quality = np.mean(qualities)
+    
+    # Collect all keywords
     all_keywords = []
     for r in responses:
         all_keywords.extend(r.get('keywords', []))
     
     keyword_counts = Counter(all_keywords)
     
+    # STRICT: Only map keywords to strengths if keywords are actually present
     strength_mapping = {
         'achievement': 'Goal-oriented with strong achievement drive',
         'growth': 'Natural inclination toward personal growth',
@@ -321,17 +330,36 @@ def identify_strengths(responses: List[Dict[str, Any]]) -> List[str]:
         'passion': 'Passionate engagement with interests'
     }
     
-    for keyword, strength in strength_mapping.items():
-        if keyword_counts.get(keyword, 0) > 0:
-            strengths.append(strength)
+    strengths = []
+    evidence_found = False
     
-    # Add sentiment-based strengths
-    sentiments = [r.get('sentiment_score', 0) for r in responses]
-    if np.mean(sentiments) > 0.3:
+    for keyword, strength in strength_mapping.items():
+        count = keyword_counts.get(keyword, 0)
+        if count > 0:
+            strengths.append(strength)
+            evidence_found = True
+    
+    # STRICT: Only add sentiment-based strength if sentiment is clearly positive
+    if avg_sentiment > 0.3:
         strengths.append('Positive outlook and optimistic perspective')
+        evidence_found = True
+    
+    # STRICT: If negative sentiment dominates, do NOT add default strengths
+    is_negative_dominant = (
+        avg_sentiment < -0.1 or
+        avg_quality < 0.4 or
+        len([s for s in sentiments if s < 0]) > len(sentiments) / 2
+    )
     
     if not strengths:
-        strengths = ['Willingness to self-reflect and share experiences']
+        if is_negative_dominant:
+            # Honest assessment when no evidence and negative sentiment
+            return ['No clear strengths identified from current responses']
+        elif evidence_found:
+            return strengths[:5]
+        else:
+            # Neutral fallback only when sentiment is not negative
+            return ['Willingness to engage in self-reflection']
     
     return strengths[:5]  # Top 5 strengths
 

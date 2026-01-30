@@ -2,8 +2,14 @@
 K-Means clustering module for behavioral pattern grouping
 """
 import numpy as np
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional, Set
 from collections import Counter
+
+from ml_engine.sentiment_context import (
+    analyze_sentiment_context,
+    get_blocked_archetypes,
+    get_preferred_archetypes
+)
 
 
 # Predefined behavioral archetypes
@@ -11,7 +17,8 @@ BEHAVIORAL_ARCHETYPES = {
     'achiever': {
         'traits': ['goal-oriented', 'persistent', 'growth-minded', 'competitive'],
         'keywords': ['achieve', 'goal', 'success', 'accomplish', 'win', 'best', 'first'],
-        'description': 'Driven by goals and measurable achievements'
+        'description': 'Driven by goals and measurable achievements',
+        'requires_evidence': True  # STRICT: Cannot be assigned without explicit evidence
     },
     'explorer': {
         'traits': ['curious', 'adventurous', 'open-minded', 'creative'],
@@ -36,7 +43,33 @@ BEHAVIORAL_ARCHETYPES = {
     'innovator': {
         'traits': ['creative', 'visionary', 'independent', 'problem-solver'],
         'keywords': ['create', 'build', 'design', 'innovate', 'idea', 'solution', 'improve'],
-        'description': 'Focuses on creating and improving'
+        'description': 'Focuses on creating and improving',
+        'requires_evidence': True  # STRICT: Cannot be assigned without explicit evidence
+    },
+    # NEW: Neutral/development-focused archetypes for negative sentiment
+    'developing': {
+        'traits': ['growing', 'learning', 'building', 'progressing'],
+        'keywords': ['trying', 'working on', 'getting better', 'learning'],
+        'description': 'Currently in a developmental phase, building skills and direction',
+        'is_neutral': True
+    },
+    'exploring': {
+        'traits': ['searching', 'questioning', 'uncertain', 'open'],
+        'keywords': ['not sure', 'figuring out', 'exploring', 'considering'],
+        'description': 'Currently exploring options and directions',
+        'is_neutral': True
+    },
+    'emerging': {
+        'traits': ['transitioning', 'evolving', 'adapting', 'changing'],
+        'keywords': ['changing', 'transition', 'shift', 'moving'],
+        'description': 'In transition, with patterns still forming',
+        'is_neutral': True
+    },
+    'uncertain': {
+        'traits': ['questioning', 'reflective', 'undecided', 'contemplative'],
+        'keywords': ['unsure', 'confused', 'unclear', 'questioning'],
+        'description': 'Currently facing uncertainty about direction or goals',
+        'is_neutral': True
     }
 }
 
@@ -88,12 +121,27 @@ def extract_behavioral_features(responses: List[Dict[str, Any]]) -> np.ndarray:
     return features
 
 
-def calculate_archetype_affinity(responses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def calculate_archetype_affinity(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Calculate affinity scores for each behavioral archetype.
+    Uses sentiment context to block inappropriate archetypes and prefer neutral ones.
+    
+    STRICT RULES:
+    - Block 'Achiever' unless explicit achievement evidence found
+    - Block 'Innovator' unless explicit creative evidence found
+    - Prefer neutral archetypes (developing, exploring, emerging) for negative sentiment
     """
     if not responses:
         return [{'cluster_name': 'unknown', 'affinity': 0.5, 'traits': [], 'description': 'Insufficient data'}]
+    
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Get blocked and preferred archetypes based on sentiment
+    blocked_archetypes = get_blocked_archetypes(sentiment_context)
+    preferred_archetypes = get_preferred_archetypes(sentiment_context)
+    is_negative_dominant = sentiment_context.get('is_negative_dominant', False)
     
     # Combine all text
     all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
@@ -106,6 +154,10 @@ def calculate_archetype_affinity(responses: List[Dict[str, Any]]) -> List[Dict[s
     affinities = []
     
     for archetype, data in BEHAVIORAL_ARCHETYPES.items():
+        # STRICT: Skip blocked archetypes entirely
+        if archetype in blocked_archetypes:
+            continue
+        
         score = 0.0
         matches = 0
         
@@ -120,15 +172,28 @@ def calculate_archetype_affinity(responses: List[Dict[str, Any]]) -> List[Dict[s
             if any(trait in kw.lower() for trait in data['traits']):
                 score += 0.08 * keyword_counts[kw]
         
+        # STRICT: Require evidence for evidence-based archetypes
+        if data.get('requires_evidence', False) and matches < 2:
+            continue  # Skip if not enough evidence
+        
+        # Boost preferred archetypes for negative sentiment
+        if archetype in preferred_archetypes:
+            score += 0.3  # Significant boost
+        
+        # Penalty for positive archetypes in negative sentiment context
+        if is_negative_dominant and not data.get('is_neutral', False):
+            score = score * 0.6
+        
         # Normalize score
         affinity = min(1.0, score)
         
-        if affinity > 0.2:  # Only include significant affinities
+        if affinity > 0.15:  # Lower threshold to include neutral archetypes
             affinities.append({
                 'cluster_name': archetype,
                 'affinity': round(affinity, 2),
                 'traits': data['traits'],
-                'description': data['description']
+                'description': data['description'],
+                'is_neutral': data.get('is_neutral', False)
             })
     
     # Sort by affinity
@@ -136,13 +201,22 @@ def calculate_archetype_affinity(responses: List[Dict[str, Any]]) -> List[Dict[s
     
     # Return top 3 or at least one
     if not affinities:
-        # Default to balanced profile
-        return [{
-            'cluster_name': 'balanced',
-            'affinity': 0.5,
-            'traits': ['adaptable', 'moderate', 'flexible'],
-            'description': 'Shows balanced behavioral patterns across categories'
-        }]
+        # STRICT: Default to neutral profile for negative sentiment
+        if is_negative_dominant:
+            return [{
+                'cluster_name': 'developing',
+                'affinity': 0.5,
+                'traits': ['growing', 'learning', 'building', 'progressing'],
+                'description': 'Currently in a developmental phase, building skills and direction',
+                'is_neutral': True
+            }]
+        else:
+            return [{
+                'cluster_name': 'balanced',
+                'affinity': 0.5,
+                'traits': ['adaptable', 'moderate', 'flexible'],
+                'description': 'Shows balanced behavioral patterns across categories'
+            }]
     
     return affinities[:3]
 
@@ -215,12 +289,17 @@ def cluster_responses_by_category(responses: List[Dict[str, Any]]) -> Dict[str, 
     return category_analysis
 
 
-def get_behavioral_clusters(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+def get_behavioral_clusters(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Main clustering function returning behavioral profile.
+    Uses sentiment context for strict archetype assignment.
     """
-    # Calculate archetype affinities
-    archetypes = calculate_archetype_affinity(responses)
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Calculate archetype affinities with sentiment awareness
+    archetypes = calculate_archetype_affinity(responses, sentiment_context)
     
     # Get category analysis
     category_analysis = cluster_responses_by_category(responses)
@@ -231,5 +310,6 @@ def get_behavioral_clusters(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         'archetypes': archetypes,
         'category_analysis': category_analysis,
-        'feature_vector': features.tolist()[0] if len(features) > 0 else []
+        'feature_vector': features.tolist()[0] if len(features) > 0 else [],
+        'sentiment_context': sentiment_context  # Include for downstream use
     }

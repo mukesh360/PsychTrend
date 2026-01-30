@@ -5,6 +5,15 @@ import numpy as np
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
+from ml_engine.sentiment_context import (
+    analyze_sentiment_context,
+    get_score_caps,
+    STRESS_KEYWORDS,
+    LOW_MOTIVATION_KEYWORDS,
+    UNCERTAINTY_KEYWORDS,
+    FEAR_DISCOURAGEMENT_KEYWORDS
+)
+
 
 def calculate_moving_average(values: List[float], window: int = 3) -> List[float]:
     """Calculate moving average with specified window"""
@@ -85,10 +94,11 @@ def detect_change_points(values: List[float], threshold: float = 0.3) -> List[in
     return change_points
 
 
-def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+def analyze_motivation_trend(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Analyze motivation trend from responses.
     Uses sentiment and achievement-related keywords.
+    Applies score caps when negative sentiment dominates.
     """
     if not responses:
         return {
@@ -99,17 +109,33 @@ def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
             'data_points': []
         }
     
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Get score caps based on sentiment
+    score_caps = get_score_caps(sentiment_context)
+    max_score = score_caps.get('motivation', 1.0)
+    
     # Extract motivation indicators
     motivation_keywords = {
         'motivated', 'inspired', 'excited', 'passionate', 'driven',
         'determined', 'goal', 'achieve', 'success', 'accomplished'
     }
     
+    # Combine all text for negative indicator detection
+    all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
+    
+    # Detect negative motivation indicators
+    stress_indicators = sum(1 for kw in STRESS_KEYWORDS if kw in all_text)
+    low_motivation_indicators = sum(1 for kw in LOW_MOTIVATION_KEYWORDS if kw in all_text)
+    
     scores = []
     for resp in responses:
         sentiment = resp.get('sentiment_score', 0)
         keywords = set(resp.get('keywords', []))
         input_quality = resp.get('input_quality', 1.0)
+        resp_text = resp.get('raw_response', '').lower()
         
         # Base score from sentiment
         score = (sentiment + 1) / 2  # Normalize to 0-1
@@ -119,24 +145,44 @@ def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         if motivation_match > 0:
             score = min(1.0, score + 0.1 * motivation_match)
         
+        # STRICT: Penalty for stress/pressure language in this response
+        if any(kw in resp_text for kw in STRESS_KEYWORDS):
+            score = score * 0.6
+        
+        # STRICT: Penalty for low motivation language
+        if any(kw in resp_text for kw in LOW_MOTIVATION_KEYWORDS):
+            score = score * 0.5
+        
         # Apply quality penalty for low-quality inputs
         if input_quality < 0.5:
             # Reduce score significantly for poor responses
             score = score * input_quality * 0.6
         
-        scores.append(score)
+        scores.append(max(0, min(1, score)))
     
     # Calculate overall metrics
     avg_score = sum(scores) / len(scores)
+    
+    # STRICT: Apply score cap based on sentiment context
+    avg_score = min(avg_score, max_score)
+    
+    # Additional reduction for multiple negative indicators
+    if stress_indicators >= 2 or low_motivation_indicators >= 1:
+        avg_score = min(avg_score, 0.45)
+    if stress_indicators >= 3 or low_motivation_indicators >= 2:
+        avg_score = min(avg_score, 0.35)
+    
     trend = detect_trend_direction(scores)
     
-    # Generate description
-    if trend['direction'] == 'upward':
+    # Generate description - tone appropriate to score
+    if avg_score >= 0.7:
         desc = "Shows increasing motivation over time, with growing enthusiasm for goals and achievements."
-    elif trend['direction'] == 'downward':
-        desc = "Motivation appears to be declining. Consider identifying sources of inspiration and setting smaller, achievable goals."
+    elif avg_score >= 0.45:
+        desc = "Shows moderate motivation with some variability. May be experiencing periods of reduced drive."
+    elif avg_score >= 0.3:
+        desc = "Currently experiencing challenges with motivation. Shows signs of stress or pressure affecting drive."
     else:
-        desc = "Maintains steady motivation levels throughout experiences."
+        desc = "May be facing significant motivation challenges. Shows indicators of stress, pressure, or discouragement."
     
     return {
         'name': 'Motivation Trend',
@@ -144,13 +190,15 @@ def analyze_motivation_trend(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         'trend_direction': trend['direction'],
         'description': desc,
         'data_points': [round(s, 2) for s in scores],
-        'confidence': trend['confidence']
+        'confidence': trend['confidence'],
+        'score_capped': avg_score < (sum(scores) / len(scores)) if scores else False
     }
 
 
-def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+def analyze_consistency(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Analyze behavioral consistency from responses.
+    Applies score caps when negative sentiment dominates.
     """
     if not responses:
         return {
@@ -160,6 +208,21 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
             'description': 'Insufficient data for analysis',
             'data_points': []
         }
+    
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Get score caps based on sentiment
+    score_caps = get_score_caps(sentiment_context)
+    max_score = score_caps.get('consistency', 1.0)
+    
+    # Combine all text for negative indicator detection
+    all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
+    
+    # Detect overwhelming/exhausting routine descriptions
+    exhaustion_keywords = {'tiring', 'exhausting', 'overwhelming', 'draining', 'too much', 'burnt out'}
+    exhaustion_count = sum(1 for kw in exhaustion_keywords if kw in all_text)
     
     # Look for consistency indicators
     consistency_keywords = {
@@ -178,8 +241,8 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         text = resp.get('raw_response', '').lower()
         input_quality = resp.get('input_quality', 1.0)
         
-        # Start with moderate score, but reduce base for low-quality inputs
-        base_score = 0.5 if input_quality >= 0.5 else 0.2
+        # STRICT: Start with lower base for low-quality inputs
+        base_score = 0.5 if input_quality >= 0.5 else 0.15
         score = base_score
         
         # Check for consistency indicators
@@ -192,9 +255,13 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
             if kw in text:
                 score -= 0.05
         
+        # STRICT: Penalty for exhaustion/overwhelming language
+        if any(kw in text for kw in exhaustion_keywords):
+            score = score * 0.4
+        
         # Apply quality penalty
         if input_quality < 0.5:
-            score = score * input_quality
+            score = score * input_quality * 0.5
         
         scores.append(max(0, min(1, score)))
     
@@ -209,13 +276,24 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     avg_score = max(0, sum(scores) / len(scores) - volatility_penalty)
     
-    # Generate description
+    # STRICT: Apply score cap based on sentiment context
+    avg_score = min(avg_score, max_score)
+    
+    # Additional reduction for exhaustion indicators
+    if exhaustion_count >= 1:
+        avg_score = min(avg_score, 0.30)
+    if exhaustion_count >= 2:
+        avg_score = min(avg_score, 0.20)
+    
+    # Generate description - tone appropriate to score
     if avg_score > 0.7:
         desc = "Demonstrates strong consistency in behavior and routines. Shows reliable patterns."
     elif avg_score > 0.4:
         desc = "Maintains moderate consistency with some variability. Balanced between routine and flexibility."
+    elif avg_score > 0.25:
+        desc = "Currently experiencing difficulty maintaining consistent patterns. Routines may feel overwhelming or tiring."
     else:
-        desc = "Shows high variability in patterns. May benefit from establishing more consistent routines."
+        desc = "Shows signs of struggling with consistency. May be facing challenges in maintaining routines due to stress or exhaustion."
     
     return {
         'name': 'Consistency Score',
@@ -223,13 +301,15 @@ def analyze_consistency(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         'trend_direction': 'stable',
         'description': desc,
         'data_points': [round(s, 2) for s in scores],
-        'volatility': round(volatility_penalty, 2) if len(sentiments) > 1 else 0
+        'volatility': round(volatility_penalty, 2) if len(sentiments) > 1 else 0,
+        'score_capped': avg_score < (sum(scores) / len(scores) - volatility_penalty) if scores else False
     }
 
 
-def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+def analyze_growth_orientation(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Analyze growth mindset and orientation.
+    Applies score caps when negative sentiment dominates.
     """
     if not responses:
         return {
@@ -240,6 +320,25 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
             'data_points': []
         }
     
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Get score caps based on sentiment
+    score_caps = get_score_caps(sentiment_context)
+    max_score = score_caps.get('growth', 1.0)
+    
+    # Combine all text for negative indicator detection
+    all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
+    
+    # Detect uncertainty about growth indicators
+    uncertainty_indicators = sum(1 for kw in UNCERTAINTY_KEYWORDS if kw in all_text)
+    fear_indicators = sum(1 for kw in FEAR_DISCOURAGEMENT_KEYWORDS if kw in all_text)
+    
+    # Keywords suggesting growth feels forced or unclear
+    forced_growth_keywords = {'forced', 'have to', 'must', 'pressure', 'expected', 'should'}
+    forced_count = sum(1 for kw in forced_growth_keywords if kw in all_text)
+    
     growth_keywords = {
         'learned', 'growth', 'improved', 'developed', 'grew', 'progress',
         'challenge', 'opportunity', 'new', 'skill', 'knowledge', 'better',
@@ -247,8 +346,8 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
     }
     
     fixed_keywords = {
-        'stuck', 'can\'t', 'impossible', 'always been', 'never could',
-        'born', 'natural', 'talent', 'gifted'
+        'stuck', "can't", 'impossible', 'always been', 'never could',
+        'born', 'natural', 'talent', 'gifted', 'hopeless', 'pointless'
     }
     
     scores = []
@@ -259,8 +358,8 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
         keywords = resp.get('keywords', [])
         input_quality = resp.get('input_quality', 1.0)
         
-        # Start with base score adjusted for quality
-        score = 0.5 if input_quality >= 0.5 else 0.15
+        # STRICT: Start with lower base score for low-quality inputs
+        score = 0.5 if input_quality >= 0.5 else 0.10
         
         # Check for growth indicators
         for kw in growth_keywords:
@@ -272,24 +371,46 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
         # Check for fixed mindset indicators
         for kw in fixed_keywords:
             if kw in text:
-                score -= 0.1
+                score -= 0.12  # STRICT: Increased penalty
+        
+        # STRICT: Penalty for uncertainty language
+        if any(kw in text for kw in UNCERTAINTY_KEYWORDS):
+            score = score * 0.7
+        
+        # STRICT: Penalty for fear/discouragement language
+        if any(kw in text for kw in FEAR_DISCOURAGEMENT_KEYWORDS):
+            score = score * 0.5
         
         # Apply quality penalty
         if input_quality < 0.5:
-            score = score * input_quality
+            score = score * input_quality * 0.5
         
         scores.append(max(0, min(1, score)))
     
     avg_score = sum(scores) / len(scores)
+    
+    # STRICT: Apply score cap based on sentiment context
+    avg_score = min(avg_score, max_score)
+    
+    # Additional reduction for uncertainty/forced growth
+    if uncertainty_indicators >= 2 or forced_count >= 2:
+        avg_score = min(avg_score, 0.45)
+    if fear_indicators >= 1:
+        avg_score = min(avg_score, 0.40)
+    if uncertainty_indicators >= 3 or fear_indicators >= 2:
+        avg_score = min(avg_score, 0.30)
+    
     trend = detect_trend_direction(scores)
     
-    # Generate description
+    # Generate description - tone appropriate to score
     if avg_score > 0.7:
         desc = "Shows strong growth orientation with focus on learning and development."
-    elif avg_score > 0.4:
-        desc = "Demonstrates balanced approach to growth with openness to learning."
+    elif avg_score > 0.45:
+        desc = "Demonstrates moderate openness to growth. May benefit from clearer direction."
+    elif avg_score > 0.3:
+        desc = "Currently experiencing uncertainty about growth. Growth direction may feel unclear or forced."
     else:
-        desc = "May benefit from adopting more growth-oriented perspectives."
+        desc = "May be facing challenges with growth orientation. Shows signs of uncertainty, discouragement, or feeling stuck."
     
     return {
         'name': 'Growth Orientation',
@@ -297,13 +418,15 @@ def analyze_growth_orientation(responses: List[Dict[str, Any]]) -> Dict[str, Any
         'trend_direction': trend['direction'],
         'description': desc,
         'data_points': [round(s, 2) for s in scores],
-        'indicators': indicators[:5]  # Top 5 indicators
+        'indicators': indicators[:5],  # Top 5 indicators
+        'score_capped': avg_score < (sum(scores) / len(scores)) if scores else False
     }
 
 
-def analyze_stress_response(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
+def analyze_stress_response(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Analyze stress response patterns.
+    Applies score caps when negative sentiment dominates.
     """
     if not responses:
         return {
@@ -314,16 +437,32 @@ def analyze_stress_response(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
             'data_points': []
         }
     
+    # Get sentiment context if not provided
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
+    # Get score caps based on sentiment
+    score_caps = get_score_caps(sentiment_context)
+    max_score = score_caps.get('stress_response', 1.0)
+    
+    # Combine all text for negative indicator detection
+    all_text = ' '.join(r.get('raw_response', '') for r in responses).lower()
+    
+    # Detect fear/discouragement indicators
+    fear_indicators = sum(1 for kw in FEAR_DISCOURAGEMENT_KEYWORDS if kw in all_text)
+    stress_indicators = sum(1 for kw in STRESS_KEYWORDS if kw in all_text)
+    
     # Active coping indicators
     active_coping = {
         'handled', 'managed', 'solved', 'addressed', 'faced', 'overcame',
         'dealt', 'took action', 'worked through', 'found solution'
     }
     
-    # Avoidance indicators
+    # Avoidance indicators - expanded
     avoidance = {
         'avoided', 'ignored', 'gave up', 'quit', 'walked away',
-        'couldn\'t handle', 'too much'
+        "couldn't handle", 'too much', 'ran away', 'escaped',
+        'shut down', 'frozen', 'paralyzed', 'overwhelmed'
     }
     
     # Support-seeking indicators
@@ -342,6 +481,7 @@ def analyze_stress_response(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
     for resp in responses:
         text = resp.get('raw_response', '').lower()
         sentiment = resp.get('sentiment_score', 0)
+        input_quality = resp.get('input_quality', 1.0)
         
         # Analyze coping style
         for kw in active_coping:
@@ -364,23 +504,49 @@ def analyze_stress_response(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         else:
             score = 0.5 + (sentiment + 1) / 10
         
+        # STRICT: Penalty for avoidance indicators
+        if any(kw in text for kw in avoidance):
+            score = score * 0.5
+        
+        # STRICT: Penalty for fear/discouragement in this response
+        if any(kw in text for kw in FEAR_DISCOURAGEMENT_KEYWORDS):
+            score = score * 0.6
+        
+        # STRICT: Quality penalty
+        if input_quality < 0.5:
+            score = score * input_quality * 0.6
+        
         coping_scores.append(max(0, min(1, score)))
     
+    avg_score = sum(coping_scores) / len(coping_scores) if coping_scores else 0.5
+    
+    # STRICT: Apply score cap based on sentiment context
+    avg_score = min(avg_score, max_score)
+    
+    # Additional reduction for fear/discouragement indicators
+    if fear_indicators >= 1 or stress_indicators >= 2:
+        avg_score = min(avg_score, 0.45)
+    if fear_indicators >= 2 or avoidance_count >= 2:
+        avg_score = min(avg_score, 0.35)
+    if fear_indicators >= 3 or (stress_indicators >= 2 and fear_indicators >= 1):
+        avg_score = min(avg_score, 0.25)
+    
     # Determine dominant pattern
-    if active_count > support_count and active_count > avoidance_count:
+    if avoidance_count > active_count and avoidance_count > support_count:
+        pattern = 'avoidance-prone'
+        desc = "Currently showing signs of difficulty handling stress. May benefit from developing coping strategies."
+    elif active_count > support_count and active_count > avoidance_count:
         pattern = 'active-coping'
         desc = "Tends to address challenges directly with problem-solving approach."
     elif support_count > active_count and support_count > avoidance_count:
         pattern = 'support-seeking'
         desc = "Values collaboration and seeks help when facing challenges."
-    elif avoidance_count > 0:
-        pattern = 'avoidance-prone'
-        desc = "May benefit from developing more direct coping strategies."
     else:
         pattern = 'balanced'
-        desc = "Shows balanced approach to handling stressful situations."
-    
-    avg_score = sum(coping_scores) / len(coping_scores) if coping_scores else 0.5
+        if avg_score < 0.4:
+            desc = "May be facing challenges with stress management. Shows signs of discouragement or fear."
+        else:
+            desc = "Shows balanced approach to handling stressful situations."
     
     return {
         'name': 'Stress Response',
@@ -388,15 +554,30 @@ def analyze_stress_response(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
         'pattern': pattern,
         'trend_direction': 'stable',
         'description': desc,
-        'data_points': [round(s, 2) for s in coping_scores]
+        'data_points': [round(s, 2) for s in coping_scores],
+        'score_capped': avg_score < (sum(coping_scores) / len(coping_scores)) if coping_scores else False
     }
 
 
-def get_all_trends(responses: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Get all trend analyses"""
+def get_all_trends(responses: List[Dict[str, Any]], sentiment_context: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Get all trend analyses with sentiment context for stricter scoring.
+    
+    Args:
+        responses: List of structured response dicts
+        sentiment_context: Optional pre-computed sentiment context
+        
+    Returns:
+        Dict with all trend analyses including sentiment_context
+    """
+    # Compute sentiment context once and pass to all functions
+    if sentiment_context is None:
+        sentiment_context = analyze_sentiment_context(responses)
+    
     return {
-        'motivation': analyze_motivation_trend(responses),
-        'consistency': analyze_consistency(responses),
-        'growth': analyze_growth_orientation(responses),
-        'stress_response': analyze_stress_response(responses)
+        'motivation': analyze_motivation_trend(responses, sentiment_context),
+        'consistency': analyze_consistency(responses, sentiment_context),
+        'growth': analyze_growth_orientation(responses, sentiment_context),
+        'stress_response': analyze_stress_response(responses, sentiment_context),
+        'sentiment_context': sentiment_context  # Include for report generation
     }

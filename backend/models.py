@@ -142,3 +142,68 @@ class ResetResponse(BaseModel):
     success: bool
     message: str
     deleted_sessions: int = 0
+
+
+# =============================================================================
+# LLM Integration Models
+# =============================================================================
+
+class LLMHealthStatus(BaseModel):
+    """Ollama LLM health status"""
+    model_config = {"protected_namespaces": ()}
+    
+    status: str  # "healthy", "error"
+    ollama_running: bool
+    model_available: bool = False
+    configured_model: Optional[str] = None
+    available_models: List[str] = []
+    error: Optional[str] = None
+
+
+class NormalizedInput(BaseModel):
+    """LLM-normalized user input"""
+    original: str
+    normalized: Optional[str] = None
+    quality: str  # "high", "medium", "low"
+    used_llm: bool = False
+    fallback_reason: Optional[str] = None
+
+
+class TrendExplanation(BaseModel):
+    """LLM-generated trend explanation"""
+    trend_name: str
+    score: float
+    direction: str
+    explanation: str
+    llm_generated: bool = False
+
+
+class EnhancedReportResponse(BaseModel):
+    """LLM-enhanced report response"""
+    session_id: str
+    generated_at: datetime
+    user_name: Optional[str]
+    
+    # LLM-enhanced sections
+    executive_summary: str
+    full_report_markdown: Optional[str] = None
+    
+    # Original analysis data
+    trend_analysis: Dict[str, Any]
+    trend_explanations: Dict[str, str] = {}
+    behavioral_profile: Dict[str, Any]
+    predictions: List[Dict[str, Any]]
+    strengths: List[str]
+    growth_opportunities: List[str]
+    
+    # Metadata
+    llm_enhanced: bool = False
+    llm_model: Optional[str] = None
+    
+    # Disclaimer (always present)
+    disclaimer: str = (
+        "IMPORTANT DISCLAIMER: This report provides behavioral insights based on "
+        "self-reported experiences. It is NOT a medical, clinical, or psychological "
+        "diagnosis. For professional guidance on mental health or personal development, "
+        "please consult a qualified professional."
+    )
